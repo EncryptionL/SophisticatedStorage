@@ -4,6 +4,7 @@ import com.mojang.math.Axis;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
@@ -40,7 +41,6 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.p3pp3rf1y.sophisticatedcore.api.IDisplaySideStorage;
 import net.p3pp3rf1y.sophisticatedcore.util.InventoryHelper;
-import net.p3pp3rf1y.sophisticatedcore.util.MenuProviderHelper;
 import net.p3pp3rf1y.sophisticatedcore.util.WorldHelper;
 import net.p3pp3rf1y.sophisticatedstorage.common.CapabilityStorageWrapper;
 import net.p3pp3rf1y.sophisticatedstorage.Config;
@@ -291,7 +291,17 @@ public class ChestBlock extends WoodStorageBlockBase implements SimpleWaterlogge
 			}
 
 			player.awardStat(Stats.CUSTOM.get(Stats.OPEN_CHEST));
-			player.openMenu(MenuProviderHelper.createMenuProvider((w, p, pl) -> new StorageContainerMenu(w, pl, mainChestPos), b.getDisplayName(), mainChestPos));
+			// Push the latest block-entity data (notably a double chest's inventory size) to the client right
+			// before opening, so the GUI is built with the correct slot count. Without this, the client's copy of
+			// a freshly placed double chest can still be single-size, making the menu render half-size with items
+			// spilling into the player inventory area.
+			if (player instanceof ServerPlayer serverPlayer) {
+				ClientboundBlockEntityDataPacket updatePacket = b.getUpdatePacket();
+				if (updatePacket != null) {
+					serverPlayer.connection.send(updatePacket);
+				}
+			}
+			player.sophisticatedCore_openMenu(new SimpleMenuProvider((w, p, pl) -> new StorageContainerMenu(w, pl, mainChestPos), b.getDisplayName()), mainChestPos);
 			PiglinAi.angerNearbyPiglins(player, true);
 
 			return InteractionResult.CONSUME;
@@ -304,12 +314,26 @@ public class ChestBlock extends WoodStorageBlockBase implements SimpleWaterlogge
 
 		if (ChestBlockItem.isDoubleChest(stack) && !level.isClientSide()) {
 			BlockPos otherPartPos = pos.relative(state.getValue(FACING).getCounterClockWise());
-			level.setBlock(otherPartPos, state.setValue(TYPE, ChestType.LEFT), 3);
+			// Form the double chest EXPLICITLY without ever running neighbor shape updates (UPDATE_KNOWN_SHAPE).
+			// The main half already holds the full double-size inventory (loaded by super.setPlacedBy), so we just
+			// set it to RIGHT and link the freshly placed LEFT half to it via setMainPos. Running updateShape here
+			// is what caused issue #84 (the main half briefly looked "disconnected" and dropped its second half's
+			// contents) and also left the LEFT half with a cleared doubleMainPos, so opening it showed only a
+			// half-size single inventory. Doing it deterministically avoids both.
+			int flags = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
+			level.setBlock(pos, state.setValue(TYPE, ChestType.RIGHT), flags);
+			level.setBlock(otherPartPos, state.setValue(TYPE, ChestType.LEFT), flags);
 			level.getBlockEntity(otherPartPos, ModBlocks.CHEST_BLOCK_ENTITY_TYPE).ifPresent(be -> {
 				setRenderBlockRenderProperties(stack, be);
 				be.setMainPos(pos);
 				be.tryToAddToController();
+				WorldHelper.notifyBlockUpdate(be);
 			});
+			WorldHelper.getBlockEntity(level, pos, ChestBlockEntity.class).ifPresent(be -> {
+				be.getStorageWrapper().getUpgradeHandler().refreshUpgradeWrappers();
+				WorldHelper.notifyBlockUpdate(be);
+			});
+			return;
 		}
 
 		ChestType chestType = state.getValue(TYPE);

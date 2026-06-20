@@ -22,7 +22,6 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.p3pp3rf1y.sophisticatedcore.util.BlockBase;
-import net.p3pp3rf1y.sophisticatedcore.util.MenuProviderHelper;
 import net.p3pp3rf1y.sophisticatedstorage.common.gui.DecorationTableMenu;
 import net.p3pp3rf1y.sophisticatedstorage.init.ModBlocks;
 
@@ -62,7 +61,7 @@ public class DecorationTableBlock extends BlockBase implements EntityBlock {
 			return InteractionResult.SUCCESS;
 		}
 
-		player.openMenu(MenuProviderHelper.createMenuProvider((w, p, pl) -> new DecorationTableMenu(w, pl, pos), getName(), pos));
+		player.sophisticatedCore_openMenu(new SimpleMenuProvider((w, p, pl) -> new DecorationTableMenu(w, pl, pos), getName()), pos);
 
 		return InteractionResult.CONSUME;
 	}

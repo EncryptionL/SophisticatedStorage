@@ -21,6 +21,7 @@ import net.p3pp3rf1y.sophisticatedcore.upgrades.UpgradeHandler;
 import net.p3pp3rf1y.sophisticatedcore.util.MenuProviderHelper;
 import net.p3pp3rf1y.sophisticatedcore.util.NoopStorageWrapper;
 import net.p3pp3rf1y.sophisticatedcore.util.WorldHelper;
+import net.p3pp3rf1y.sophisticatedstorage.block.ChestBlockEntity;
 import net.p3pp3rf1y.sophisticatedstorage.block.StorageBlockEntity;
 import net.p3pp3rf1y.sophisticatedstorage.block.WoodStorageBlockEntity;
 import net.p3pp3rf1y.sophisticatedstorage.client.gui.StorageTranslationHelper;
@@ -51,7 +52,11 @@ public class StorageContainerMenu extends StorageContainerMenuBase<IStorageWrapp
 	}
 
 	private static IStorageWrapper getWrapper(Level level, BlockPos pos) {
-		return WorldHelper.getBlockEntity(level, pos, StorageBlockEntity.class).map(be -> (IStorageWrapper) be.getStorageWrapper()).orElse(NoopStorageWrapper.INSTANCE);
+		return WorldHelper.getBlockEntity(level, pos, StorageBlockEntity.class)
+				// For a double chest, always use the main half's (double-size) wrapper so that opening the
+				// delegate half shows the full inventory instead of a half-size single one.
+				.map(be -> be instanceof ChestBlockEntity chestBlockEntity ? (IStorageWrapper) chestBlockEntity.getMainStorageWrapper() : (IStorageWrapper) be.getStorageWrapper())
+				.orElse(NoopStorageWrapper.INSTANCE);
 	}
 
 	public static StorageContainerMenu fromBuffer(int windowId, Inventory playerInventory, FriendlyByteBuf packetBuffer) {
